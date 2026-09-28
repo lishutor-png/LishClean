@@ -37,7 +37,7 @@ object DuplicateScannerEngine {
         // 1. Recursive file discovery
         for (folderPath in targetFolders) {
             val root = File(folderPath)
-            if (!root.exists() || !root.canRead()) continue
+            if (!root.exists()) continue
 
             discoverFilesRecursively(
                 dir = root,
@@ -334,22 +334,35 @@ object DuplicateScannerEngine {
         onProgress: suspend (String, Int) -> Unit,
         accumulator: MutableList<File>
     ) {
-        if (!coroutineContext.isActive || !dir.exists() || !dir.canRead()) return
+        if (!coroutineContext.isActive || !dir.exists()) return
 
-        val files = dir.listFiles() ?: return
+        val files = try {
+            dir.listFiles()
+        } catch (_: Exception) {
+            null
+        } ?: return
+
         for (f in files) {
             if (!coroutineContext.isActive) return
 
-            if (!includeHidden && f.name.startsWith(".")) {
-                continue
-            }
-
             if (f.isDirectory) {
-                onProgress(f.name, accumulator.size)
+                val folderName = f.name
+                // Skip developer/build artifacts that aren't user storage
+                if (folderName == ".git" || folderName == ".gradle" || folderName == ".idea" || folderName == "node_modules") {
+                    continue
+                }
+                // ALWAYS scan folders starting with '.', such as '.namaFolder', '.secret', '.backup', etc.
+                onProgress(folderName, accumulator.size)
                 discoverFilesRecursively(f, includeHidden, minSizeBytes, categoryFilter, onProgress, accumulator)
-            } else if (f.isFile && f.length() >= minSizeBytes) {
-                if (categoryFilter == FileCategory.ALL || FileCategory.fromExtension(f.extension) == categoryFilter) {
-                    accumulator.add(f)
+            } else if (f.isFile) {
+                // If hidden files are excluded, only skip metadata files like .nomedia / .DS_Store
+                if (!includeHidden && f.name.startsWith(".") && (f.name.equals(".nomedia", true) || f.name.equals(".DS_Store", true))) {
+                    continue
+                }
+                if (f.length() >= minSizeBytes) {
+                    if (categoryFilter == FileCategory.ALL || FileCategory.fromExtension(f.extension) == categoryFilter) {
+                        accumulator.add(f)
+                    }
                 }
             }
         }

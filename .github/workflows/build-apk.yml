@@ -27,29 +27,44 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Prepare Secrets Configuration
+      - name: Prepare Keystores & Environment
         run: |
-          # Secrets Gradle Plugin requires .env or .env.example
+          chmod +x gradlew
+
+          # 1. Restore debug.keystore from base64 if needed
+          if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
+            echo "Decoding debug.keystore from debug.keystore.base64..."
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+
+          # 2. Fallback debug keystore generation if neither exists
+          if [ ! -f debug.keystore ]; then
+            echo "Generating fallback debug.keystore..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          # 3. Create fallback upload key for release configuration
+          if [ ! -f my-upload-key.jks ]; then
+            cp debug.keystore my-upload-key.jks 2>/dev/null || true
+          fi
+
+          # 4. Prepare .env for Secrets Gradle Plugin
           if [ ! -f .env ]; then
             echo "Creating .env from .env.example..."
             cp .env.example .env 2>/dev/null || touch .env
           fi
 
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | sdkmanager --licenses 2>/dev/null || true
+
       - name: Run Unit Tests
         run: |
-          if [ -x ./gradlew ]; then
-            ./gradlew testDebugUnitTest --stacktrace
-          else
-            gradle testDebugUnitTest --stacktrace
-          fi
+          ./gradlew testDebugUnitTest --stacktrace --no-daemon
 
       - name: Build Debug APK
         run: |
-          if [ -x ./gradlew ]; then
-            ./gradlew assembleDebug --stacktrace
-          else
-            gradle assembleDebug --stacktrace
-          fi
+          ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Verify APK Generated
         run: |

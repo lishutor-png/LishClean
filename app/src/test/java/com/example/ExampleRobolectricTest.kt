@@ -55,6 +55,42 @@ class ExampleRobolectricTest {
     }
 
     @Test
+    fun dotFolderScan_scansFilesInFoldersStartingWithDot() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val baseDir = File(context.filesDir, "test_dot_folders")
+        baseDir.mkdirs()
+
+        // Create folder starting with dot
+        val dotFolder = File(baseDir, ".namaFolder")
+        dotFolder.mkdirs()
+
+        val normalFolder = File(baseDir, "FolderBiasa")
+        normalFolder.mkdirs()
+
+        // Write identical file in .namaFolder and normalFolder
+        val fileInDot = File(dotFolder, "dokumen_penting.pdf")
+        val fileInNormal = File(normalFolder, "dokumen_penting_copy.pdf")
+        val content = "%PDF-1.4 Identical duplicate test inside .namaFolder LishClean %%EOF"
+        fileInDot.writeText(content)
+        fileInNormal.writeText(content)
+
+        // Scan base directory
+        val completedEvent = DuplicateScannerEngine.scanFolders(
+            targetFolders = listOf(baseDir.absolutePath),
+            scanMode = ScanMode.HASH_SHA256,
+            includeHiddenFiles = true
+        ).last()
+
+        assertTrue(completedEvent is ScanProgressEvent.Completed)
+        val completed = completedEvent as ScanProgressEvent.Completed
+        assertTrue("Should detect duplicate group containing file from .namaFolder", completed.groups.isNotEmpty())
+
+        val foundPaths = completed.groups.flatMap { it.items }.map { it.path }
+        assertTrue("Should scan and find file inside .namaFolder", foundPaths.contains(fileInDot.absolutePath))
+        assertTrue("Should scan and find copy in normalFolder", foundPaths.contains(fileInNormal.absolutePath))
+    }
+
+    @Test
     fun dualStorageScan_scansInternalAndExternalSimultaneously() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         // 1. Generate internal sample duplicates

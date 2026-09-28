@@ -22,14 +22,17 @@ object SampleDataGenerator {
         val folderB = File(baseDir, "Folder_B_Download").apply { mkdirs() }
         val folderC = File(baseDir, "Folder_C_Cadangan").apply { mkdirs() }
         val hiddenFolder = File(baseDir, ".hidden_storage").apply { mkdirs() }
+        val dotFolder = File(baseDir, ".namaFolder").apply { mkdirs() }
 
         // 1. Generate Bitmap image A and duplicate to folder B and C
         val imgFileA = File(folderA, "foto_pantai_sunset.jpg")
         val imgFileB = File(folderB, "foto_pantai_sunset_salinan.jpg")
         val imgFileC = File(folderC, "IMG_20240928_COPY.jpg")
+        val imgDot = File(dotFolder, "foto_pantai_sunset_dotfolder.jpg")
         createSampleImageFile(imgFileA, "PANTAI SUNSET 2024", Color.rgb(249, 115, 22))
         imgFileA.copyTo(imgFileB, overwrite = true)
         imgFileA.copyTo(imgFileC, overwrite = true)
+        imgFileA.copyTo(imgDot, overwrite = true)
 
         // 2. Generate another image with duplicate in hidden folder
         val img2A = File(folderA, "desain_vektor_logo.png")

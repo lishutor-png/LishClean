@@ -6,13 +6,16 @@ import com.example.data.repository.DuplicateRepository
 import com.example.model.DuplicateItem
 import com.example.model.FileCategory
 import com.example.model.ScanMode
+import com.example.model.StorageType
 import com.example.scanner.DuplicateScannerEngine
-import com.example.scanner.ScanProgressEvent
 import com.example.scanner.SampleDataGenerator
+import com.example.scanner.ScanProgressEvent
+import com.example.scanner.StorageDetector
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,23 +46,46 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun sampleDataGenerator_createsDuplicateFiles() = runBlocking {
+    fun storageDetector_detectsInternalVolumes() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val path = SampleDataGenerator.generateSampleDuplicates(context)
-        val dir = File(path)
-        assertTrue("Sample directory should exist", dir.exists())
+        val volumes = StorageDetector.detectStorageVolumes(context)
+        assertTrue("Storage volumes should not be empty", volumes.isNotEmpty())
+        val internalVol = volumes.find { !it.isRemovable }
+        assertNotNull("Primary internal storage should be detected", internalVol)
+    }
 
-        // Run DuplicateScannerEngine on generated samples
+    @Test
+    fun dualStorageScan_scansInternalAndExternalSimultaneously() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        // 1. Generate internal sample duplicates
+        val internalPath = SampleDataGenerator.generateSampleDuplicates(context)
+
+        // 2. Generate external (SD Card) sample duplicates
+        val externalPath = StorageDetector.createSimulatedExternalStorage(context)
+
+        val internalDir = File(internalPath)
+        val externalDir = File(externalPath)
+        assertTrue("Internal test directory should exist", internalDir.exists())
+        assertTrue("External test directory should exist", externalDir.exists())
+
+        // 3. Scan BOTH internal and external simultaneously
         val completedEvent = DuplicateScannerEngine.scanFolders(
-            targetFolders = listOf(path),
+            targetFolders = listOf(internalPath, externalPath),
             scanMode = ScanMode.HASH_SHA256,
-            includeHiddenFiles = true
+            includeHiddenFiles = true,
+            externalStoragePaths = listOf(externalPath)
         ).last()
 
         assertTrue(completedEvent is ScanProgressEvent.Completed)
         val completed = completedEvent as ScanProgressEvent.Completed
-        assertTrue("Should detect duplicate groups in sample data", completed.groups.isNotEmpty())
-        assertTrue("Total duplicate files found should be > 0", completed.stats.duplicateFilesCount > 0)
+        assertTrue("Should detect duplicate groups across storages", completed.groups.isNotEmpty())
+
+        val allItems = completed.groups.flatMap { it.items }
+        val hasExternalItem = allItems.any { it.isExternalStorage }
+        val hasInternalItem = allItems.any { !it.isExternalStorage }
+
+        assertTrue("Should contain items flagged as internal memory", hasInternalItem)
+        assertTrue("Should contain items flagged as external memory (SD Card)", hasExternalItem)
     }
 
     @Test

@@ -31,8 +31,10 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Visibility
@@ -77,6 +79,7 @@ import com.example.model.DuplicateGroup
 import com.example.model.DuplicateItem
 import com.example.model.FileCategory
 import com.example.ui.ResultsSortOption
+import com.example.ui.StorageLocationFilter
 import com.example.ui.components.FilePreviewDialog
 import com.example.ui.components.SafeDeleteConfirmDialog
 import java.text.SimpleDateFormat
@@ -88,14 +91,18 @@ fun ResultsScreen(
     groups: List<DuplicateGroup>,
     searchQuery: String,
     selectedCategory: FileCategory,
+    storageLocationFilter: StorageLocationFilter,
     sortOption: ResultsSortOption,
     previewItem: Pair<DuplicateGroup, DuplicateItem>?,
     onSearchQueryChange: (String) -> Unit,
     onCategoryChange: (FileCategory) -> Unit,
+    onStorageLocationFilterChange: (StorageLocationFilter) -> Unit,
     onSortOptionChange: (ResultsSortOption) -> Unit,
     onToggleSelect: (groupKey: String, itemPath: String) -> Unit,
     onSelectSmartKeepOldest: () -> Unit,
     onSelectSmartKeepNewest: () -> Unit,
+    onSelectKeepInternalDeleteExternal: () -> Unit,
+    onSelectKeepExternalDeleteInternal: () -> Unit,
     onSelectAll: () -> Unit,
     onDeselectAll: () -> Unit,
     onSetPreview: (DuplicateGroup, DuplicateItem) -> Unit,
@@ -120,8 +127,8 @@ fun ResultsScreen(
         map
     }
 
-    // Filter by Category and Search Keyword
-    val filteredAndSortedGroups = remember(groups, selectedCategory, searchQuery, sortOption) {
+    // Filter by Category, Storage Location, and Search Keyword
+    val filteredAndSortedGroups = remember(groups, selectedCategory, storageLocationFilter, searchQuery, sortOption) {
         var result = groups
 
         // 1. Filter by category
@@ -129,7 +136,18 @@ fun ResultsScreen(
             result = result.filter { it.category == selectedCategory }
         }
 
-        // 2. Filter by search query (file name, path, extension, or folder)
+        // 2. Filter by storage location (Internal vs External)
+        when (storageLocationFilter) {
+            StorageLocationFilter.ALL -> {}
+            StorageLocationFilter.INTERNAL -> {
+                result = result.filter { group -> group.items.any { !it.isExternalStorage } }
+            }
+            StorageLocationFilter.EXTERNAL -> {
+                result = result.filter { group -> group.items.any { it.isExternalStorage } }
+            }
+        }
+
+        // 3. Filter by search query (file name, path, extension, or folder)
         if (searchQuery.isNotBlank()) {
             val q = searchQuery.trim().lowercase()
             result = result.filter { group ->
@@ -142,7 +160,7 @@ fun ResultsScreen(
             }
         }
 
-        // 3. Sort
+        // 4. Sort
         when (sortOption) {
             ResultsSortOption.SIZE_DESC -> result.sortedByDescending { it.fileSize }
             ResultsSortOption.COUNT_DESC -> result.sortedByDescending { it.items.size }
@@ -355,6 +373,35 @@ fun ResultsScreen(
                     }
                 }
 
+                // Storage Location Filter Row (All vs Internal vs External)
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(StorageLocationFilter.entries) { loc ->
+                        val isSelected = storageLocationFilter == loc
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { onStorageLocationFilterChange(loc) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = when (loc) {
+                                        StorageLocationFilter.ALL -> Icons.Default.Storage
+                                        StorageLocationFilter.INTERNAL -> Icons.Default.Smartphone
+                                        StorageLocationFilter.EXTERNAL -> Icons.Default.SdCard
+                                    },
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp),
+                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            label = { Text(loc.title, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
                 // Header Summary Card & Smart Selection Toolbar
                 Card(
                     modifier = Modifier
@@ -431,6 +478,34 @@ fun ResultsScreen(
                                         )
                                     },
                                     modifier = Modifier.testTag("smart_keep_newest_chip")
+                                )
+                            }
+                            item {
+                                AssistChip(
+                                    onClick = onSelectKeepInternalDeleteExternal,
+                                    label = { Text("Simpan di Internal") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Smartphone,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("smart_keep_internal_chip")
+                                )
+                            }
+                            item {
+                                AssistChip(
+                                    onClick = onSelectKeepExternalDeleteInternal,
+                                    label = { Text("Simpan di Eksternal") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.SdCard,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("smart_keep_external_chip")
                                 )
                             }
                             item {
@@ -735,10 +810,44 @@ fun DuplicateGroupCard(
                                     )
                                 }
                             }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            // Storage location badge
+                            if (item.isExternalStorage) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color(0xFFCCFBF1))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "SD Card",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF0F766E),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 9.sp
+                                    )
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "Internal",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 9.sp
+                                    )
+                                }
+                            }
                         }
 
+                        val storageTypeLabel = if (item.isExternalStorage) "Eksternal" else "Internal"
                         Text(
-                            text = "${item.folderName} • ${dateFormat.format(Date(item.lastModified))}",
+                            text = "$storageTypeLabel • ${item.folderName} • ${dateFormat.format(Date(item.lastModified))}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,

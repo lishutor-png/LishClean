@@ -35,6 +35,12 @@ enum class ResultsSortOption(val title: String) {
     DATE_DESC("Paling Baru")
 }
 
+enum class StorageLocationFilter(val title: String) {
+    ALL("Semua Penyimpanan"),
+    INTERNAL("Memori Internal"),
+    EXTERNAL("Memori Eksternal (SD/USB)")
+}
+
 class DupliScanViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = DuplicateRepository(application)
@@ -62,6 +68,9 @@ class DupliScanViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _resultsCategoryFilter = MutableStateFlow(FileCategory.ALL)
     val resultsCategoryFilter: StateFlow<FileCategory> = _resultsCategoryFilter.asStateFlow()
+
+    private val _storageLocationFilter = MutableStateFlow(StorageLocationFilter.ALL)
+    val storageLocationFilter: StateFlow<StorageLocationFilter> = _storageLocationFilter.asStateFlow()
 
     private val _sortOption = MutableStateFlow(ResultsSortOption.SIZE_DESC)
     val sortOption: StateFlow<ResultsSortOption> = _sortOption.asStateFlow()
@@ -109,14 +118,41 @@ class DupliScanViewModel(application: Application) : AndroidViewModel(applicatio
             val volumes = StorageDetector.detectStorageVolumes(getApplication())
             _storageVolumes.value = volumes
 
-            val defaultTargets = mutableListOf<String>()
-            val primary = Environment.getExternalStorageDirectory()
-            if (primary != null && primary.exists()) {
-                defaultTargets.add(primary.absolutePath)
-            } else if (volumes.isNotEmpty()) {
-                defaultTargets.add(volumes.first().path)
+            // By default, select all detected storage volumes (both internal and external)
+            // so that user can scan everything with one tap!
+            val allPaths = volumes.map { it.path }
+            if (allPaths.isNotEmpty()) {
+                _targetFolders.value = allPaths
+            } else {
+                val primary = Environment.getExternalStorageDirectory()
+                if (primary != null && primary.exists()) {
+                    _targetFolders.value = listOf(primary.absolutePath)
+                }
             }
-            _targetFolders.value = defaultTargets
+        }
+    }
+
+    fun selectAllStorageVolumes() {
+        val allPaths = _storageVolumes.value.map { it.path }
+        _targetFolders.value = allPaths
+        _userMessage.value = "Semua lokasi penyimpanan (Internal & Eksternal) dipilih untuk dipindai."
+    }
+
+    fun selectInternalOnly() {
+        val internalPaths = _storageVolumes.value.filter { !it.isRemovable }.map { it.path }
+        if (internalPaths.isNotEmpty()) {
+            _targetFolders.value = internalPaths
+            _userMessage.value = "Hanya memori internal yang dipilih."
+        }
+    }
+
+    fun selectExternalOnly() {
+        val externalPaths = _storageVolumes.value.filter { it.isRemovable }.map { it.path }
+        if (externalPaths.isNotEmpty()) {
+            _targetFolders.value = externalPaths
+            _userMessage.value = "Hanya memori eksternal (SD/USB) yang dipilih."
+        } else {
+            _userMessage.value = "Tidak ada memori eksternal terdeteksi. Gunakan tombol 'Uji SD Card' untuk simulasi."
         }
     }
 
@@ -126,6 +162,10 @@ class DupliScanViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setResultsCategoryFilter(category: FileCategory) {
         _resultsCategoryFilter.value = category
+    }
+
+    fun setStorageLocationFilter(filter: StorageLocationFilter) {
+        _storageLocationFilter.value = filter
     }
 
     fun setSortOption(sort: ResultsSortOption) {
@@ -201,13 +241,17 @@ class DupliScanViewModel(application: Application) : AndroidViewModel(applicatio
         _duplicateGroups.value = emptyList()
         _searchQuery.value = ""
         _resultsCategoryFilter.value = _selectedPreScanCategory.value
+        _storageLocationFilter.value = StorageLocationFilter.ALL
+
+        val externalRoots = _storageVolumes.value.filter { it.isRemovable }.map { it.path }
 
         scanJob = viewModelScope.launch {
             DuplicateScannerEngine.scanFolders(
                 targetFolders = targets,
                 scanMode = _scanMode.value,
                 includeHiddenFiles = _includeHiddenFiles.value,
-                categoryFilter = _selectedPreScanCategory.value
+                categoryFilter = _selectedPreScanCategory.value,
+                externalStoragePaths = externalRoots
             ).collect { event ->
                 when (event) {
                     is ScanProgressEvent.Status -> {
@@ -220,7 +264,7 @@ class DupliScanViewModel(application: Application) : AndroidViewModel(applicatio
                         repository.saveScanHistory(
                             event.stats,
                             _scanMode.value.title,
-                            targets.joinToString(", ") { File(it).name }
+                            targets.joinToString(", ") { File(it).name.ifEmpty { it } }
                         )
                     }
                 }
@@ -239,7 +283,28 @@ class DupliScanViewModel(application: Application) : AndroidViewModel(applicatio
             _scanStatus.value = ScanStatus.DiscoveringFiles("Membuat file sampel pengujian...", 0)
             val path = SampleDataGenerator.generateSampleDuplicates(getApplication())
             _targetFolders.value = listOf(path)
-            _userMessage.value = "Berhasil membuat file sampel di folder internal!"
+            _userMessage.value = "Berhasil membuat file sampel di memori internal!"
+            startScan()
+        }
+    }
+
+    /**
+     * Generates simulated external SD card storage with duplicate files
+     * and sets both internal and external storage to be scanned.
+     */
+    fun generateSimulatedExternalStorage() {
+        viewModelScope.launch {
+            _scanStatus.value = ScanStatus.DiscoveringFiles("Membuat simulasi memori eksternal (SD Card)...", 0)
+            val internalPath = SampleDataGenerator.generateSampleDuplicates(getApplication())
+            val externalPath = StorageDetector.createSimulatedExternalStorage(getApplication())
+            
+            // Refresh detected storage volumes to pick up simulated SD Card
+            val volumes = StorageDetector.detectStorageVolumes(getApplication())
+            _storageVolumes.value = volumes
+            
+            // Scan both internal and external sample directories
+            _targetFolders.value = listOf(internalPath, externalPath)
+            _userMessage.value = "Simulasi Kartu SD siap! Memindai memori internal & eksternal..."
             startScan()
         }
     }
@@ -283,6 +348,51 @@ class DupliScanViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         _userMessage.value = "Dipilih: Semua salinan kecuali file terbaru."
+    }
+
+    /**
+     * Keeps original on Internal Storage, marks duplicate copy on External Storage for deletion.
+     */
+    fun selectKeepInternalDeleteExternal() {
+        _duplicateGroups.update { groups ->
+            groups.map { group ->
+                val hasInternal = group.items.any { !it.isExternalStorage }
+                if (hasInternal) {
+                    val updated = group.items.map { item ->
+                        item.copy(isSelected = item.isExternalStorage)
+                    }
+                    group.copy(items = updated)
+                } else {
+                    // Fallback to oldest
+                    val sorted = group.items.sortedBy { it.lastModified }
+                    val updated = sorted.mapIndexed { idx, item -> item.copy(isSelected = idx > 0) }
+                    group.copy(items = updated)
+                }
+            }
+        }
+        _userMessage.value = "Dipilih: Pertahankan di Internal, hapus salinan di Eksternal."
+    }
+
+    /**
+     * Keeps original on External Storage, marks duplicate copy on Internal Storage for deletion.
+     */
+    fun selectKeepExternalDeleteInternal() {
+        _duplicateGroups.update { groups ->
+            groups.map { group ->
+                val hasExternal = group.items.any { item -> item.isExternalStorage }
+                if (hasExternal) {
+                    val updated = group.items.map { item ->
+                        item.copy(isSelected = !item.isExternalStorage)
+                    }
+                    group.copy(items = updated)
+                } else {
+                    val sorted = group.items.sortedBy { it.lastModified }
+                    val updated = sorted.mapIndexed { idx, item -> item.copy(isSelected = idx > 0) }
+                    group.copy(items = updated)
+                }
+            }
+        }
+        _userMessage.value = "Dipilih: Pertahankan di Eksternal (SD), hapus salinan di Internal."
     }
 
     fun selectAllDuplicates() {

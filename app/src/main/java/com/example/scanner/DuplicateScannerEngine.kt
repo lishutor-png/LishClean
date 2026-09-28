@@ -25,7 +25,8 @@ object DuplicateScannerEngine {
         scanMode: ScanMode = ScanMode.HASH_SHA256,
         includeHiddenFiles: Boolean = true,
         categoryFilter: FileCategory = FileCategory.ALL,
-        minFileSizeBytes: Long = 1L
+        minFileSizeBytes: Long = 1L,
+        externalStoragePaths: List<String> = emptyList()
     ): Flow<ScanProgressEvent> = flow {
         val startTime = System.currentTimeMillis()
         emit(ScanProgressEvent.Status(ScanStatus.DiscoveringFiles("Menyiapkan pemindaian...", 0)))
@@ -165,6 +166,10 @@ object DuplicateScannerEngine {
                 // Sort by lastModified: oldest is considered original, or newest depending on user preference
                 val sortedFiles = files.sortedBy { it.lastModified() }
                 val items = sortedFiles.mapIndexed { index, file ->
+                    val isExternal = externalStoragePaths.any { file.absolutePath.startsWith(it) } ||
+                        (file.absolutePath.contains("/storage/") && !file.absolutePath.startsWith("/storage/emulated/")) ||
+                        file.absolutePath.contains("Simulated_SDCard") ||
+                        file.absolutePath.startsWith("/mnt/media_rw/")
                     DuplicateItem(
                         file = file,
                         path = file.absolutePath,
@@ -174,7 +179,8 @@ object DuplicateScannerEngine {
                         hash = hashKey,
                         category = FileCategory.fromExtension(file.extension),
                         isOriginal = index == 0, // First (oldest) is original by default
-                        isSelected = index != 0 // Copies selected for cleanup by default
+                        isSelected = index != 0, // Copies selected for cleanup by default
+                        isExternalStorage = isExternal
                     )
                 }
 
@@ -276,17 +282,24 @@ object DuplicateScannerEngine {
             }
 
             if (isMatch) {
+                val isExtA = (fileA.absolutePath.contains("/storage/") && !fileA.absolutePath.startsWith("/storage/emulated/")) ||
+                    fileA.absolutePath.contains("Simulated_SDCard") || fileA.absolutePath.startsWith("/mnt/media_rw/")
+                val isExtB = (fileB.absolutePath.contains("/storage/") && !fileB.absolutePath.startsWith("/storage/emulated/")) ||
+                    fileB.absolutePath.contains("Simulated_SDCard") || fileB.absolutePath.startsWith("/mnt/media_rw/")
+
                 val itemA = DuplicateItem(
                     file = fileA,
                     isOriginal = true,
                     isSelected = false,
-                    folderName = fileA.parentFile?.name ?: "Folder A"
+                    folderName = fileA.parentFile?.name ?: "Folder A",
+                    isExternalStorage = isExtA
                 )
                 val itemB = DuplicateItem(
                     file = fileB,
                     isOriginal = false,
                     isSelected = true,
-                    folderName = fileB.parentFile?.name ?: "Folder B"
+                    folderName = fileB.parentFile?.name ?: "Folder B",
+                    isExternalStorage = isExtB
                 )
                 val group = DuplicateGroup(
                     groupKey = "${fileA.name}_${fileA.length()}",

@@ -41,8 +41,11 @@ import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -95,10 +98,14 @@ fun HomeScreen(
     onToggleHiddenFiles: () -> Unit,
     onSetCategory: (FileCategory) -> Unit,
     onToggleFolderTarget: (String) -> Unit,
+    onSelectAllStorage: () -> Unit,
+    onSelectInternalOnly: () -> Unit,
+    onSelectExternalOnly: () -> Unit,
     onRefreshStorage: () -> Unit,
     onStartScan: () -> Unit,
     onCancelScan: () -> Unit,
     onGenerateSampleData: () -> Unit,
+    onGenerateSimulatedExternal: () -> Unit,
     onNavigateToResults: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -171,13 +178,13 @@ fun HomeScreen(
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Bebaskan Ruang Penyimpanan dari File Duplikat",
+                                text = "Pindai Memori Internal & Eksternal",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
                             Text(
-                                text = "Filter spesifik berdasarkan tipe file, perbandingan hash cepat, & pratinjau aman",
+                                text = "Mendeteksi berkas duplikat di penyimpanan ponsel & MicroSD/USB secara akurat",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFFCBD5E1)
                             )
@@ -282,49 +289,159 @@ fun HomeScreen(
                 }
             }
 
-            // Storage Volumes Section
+            // Storage Volumes Section (Internal & External)
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Lokasi Penyimpanan",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    IconButton(onClick = onRefreshStorage, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Muat Ulang Penyimpanan",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                if (storageVolumes.isEmpty()) {
-                    Card(
+                Column {
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Memeriksa media penyimpanan perangkat...",
-                            modifier = Modifier.padding(16.dp),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        storageVolumes.forEach { volume ->
-                            StorageVolumeCard(
-                                volume = volume,
-                                isSelected = targetFolders.contains(volume.path),
-                                onToggle = { onToggleFolderTarget(volume.path) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Storage,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Lokasi Memori yang Dipindai",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        IconButton(onClick = onRefreshStorage, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Muat Ulang Penyimpanan",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Storage Selection Quick Chips
+                    val isAllSelected = storageVolumes.isNotEmpty() && storageVolumes.all { targetFolders.contains(it.path) }
+                    val isInternalOnly = storageVolumes.isNotEmpty() && targetFolders.all { path ->
+                        storageVolumes.find { it.path == path }?.isRemovable == false
+                    } && targetFolders.isNotEmpty() && !isAllSelected
+                    val isExternalOnly = storageVolumes.isNotEmpty() && targetFolders.all { path ->
+                        storageVolumes.find { it.path == path }?.isRemovable == true
+                    } && targetFolders.isNotEmpty() && !isAllSelected
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        item {
+                            FilterChip(
+                                selected = isAllSelected,
+                                onClick = onSelectAllStorage,
+                                label = { Text("Semua (Internal + SD)", fontSize = 12.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Storage, contentDescription = null, modifier = Modifier.size(16.dp))
+                                },
+                                modifier = Modifier.testTag("filter_storage_all")
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = isInternalOnly,
+                                onClick = onSelectInternalOnly,
+                                label = { Text("Hanya Internal", fontSize = 12.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Smartphone, contentDescription = null, modifier = Modifier.size(16.dp))
+                                },
+                                modifier = Modifier.testTag("filter_storage_internal")
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = isExternalOnly,
+                                onClick = onSelectExternalOnly,
+                                label = { Text("Hanya Eksternal", fontSize = 12.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.SdCard, contentDescription = null, modifier = Modifier.size(16.dp))
+                                },
+                                modifier = Modifier.testTag("filter_storage_external")
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (storageVolumes.isEmpty()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = "Memeriksa media penyimpanan internal & eksternal...",
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            storageVolumes.forEach { volume ->
+                                StorageVolumeCard(
+                                    volume = volume,
+                                    isSelected = targetFolders.contains(volume.path),
+                                    onToggle = { onToggleFolderTarget(volume.path) }
+                                )
+                            }
+                        }
+
+                        // Status banner if no physical external SD card is detected
+                        val hasExternal = storageVolumes.any { it.isRemovable }
+                        if (!hasExternal) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                                border = CardDefaults.outlinedCardBorder()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                        Icon(
+                                            imageVector = Icons.Default.SdCard,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                text = "Kartu SD Fisik Belum Terdeteksi",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = "Pasang MicroSD/USB OTG atau gunakan simulasi uji untuk mengetes.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                    }
+                                    OutlinedButton(
+                                        onClick = onGenerateSimulatedExternal,
+                                        modifier = Modifier.testTag("test_sdcard_btn")
+                                    ) {
+                                        Text("Uji SD Card", fontSize = 12.sp)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -532,9 +649,14 @@ fun HomeScreen(
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
+                    val locationCountText = when {
+                        targetFolders.size > 1 -> " (${targetFolders.size} Memori)"
+                        targetFolders.isNotEmpty() -> " (${targetFolders.size} Memori)"
+                        else -> ""
+                    }
                     Text(
-                        text = if (selectedCategory == FileCategory.ALL) "Mulai Pindai Semua Duplikat"
-                        else "Pindai Duplikat: ${selectedCategory.displayName}",
+                        text = if (selectedCategory == FileCategory.ALL) "Mulai Pindai Semua Duplikat$locationCountText"
+                        else "Pindai Duplikat: ${selectedCategory.displayName}$locationCountText",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )

@@ -101,6 +101,7 @@ fun LishCleanApp(vm: DupliScanViewModel = viewModel()) {
     val preScanCategory by vm.selectedPreScanCategory.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val resultsCategoryFilter by vm.resultsCategoryFilter.collectAsStateWithLifecycle()
+    val storageLocationFilter by vm.storageLocationFilter.collectAsStateWithLifecycle()
     val sortOption by vm.sortOption.collectAsStateWithLifecycle()
     val scanStatus by vm.scanStatus.collectAsStateWithLifecycle()
     val duplicateGroups by vm.duplicateGroups.collectAsStateWithLifecycle()
@@ -336,24 +337,32 @@ fun LishCleanApp(vm: DupliScanViewModel = viewModel()) {
                     onToggleHiddenFiles = { vm.toggleIncludeHiddenFiles() },
                     onSetCategory = { vm.setPreScanCategory(it) },
                     onToggleFolderTarget = { vm.toggleFolderTarget(it) },
+                    onSelectAllStorage = { vm.selectAllStorageVolumes() },
+                    onSelectInternalOnly = { vm.selectInternalOnly() },
+                    onSelectExternalOnly = { vm.selectExternalOnly() },
                     onRefreshStorage = { vm.refreshStorageVolumes() },
                     onStartScan = { vm.startScan() },
                     onCancelScan = { vm.cancelScan() },
                     onGenerateSampleData = { vm.generateSampleDuplicates() },
+                    onGenerateSimulatedExternal = { vm.generateSimulatedExternalStorage() },
                     onNavigateToResults = { currentNavIndex = 1 }
                 )
                 1 -> ResultsScreen(
                     groups = duplicateGroups,
                     searchQuery = searchQuery,
                     selectedCategory = resultsCategoryFilter,
+                    storageLocationFilter = storageLocationFilter,
                     sortOption = sortOption,
                     previewItem = previewItem,
                     onSearchQueryChange = { vm.setSearchQuery(it) },
                     onCategoryChange = { vm.setResultsCategoryFilter(it) },
+                    onStorageLocationFilterChange = { vm.setStorageLocationFilter(it) },
                     onSortOptionChange = { vm.setSortOption(it) },
                     onToggleSelect = { groupKey, path -> vm.toggleItemSelection(groupKey, path) },
                     onSelectSmartKeepOldest = { vm.selectSmartKeepOldest() },
                     onSelectSmartKeepNewest = { vm.selectSmartKeepNewest() },
+                    onSelectKeepInternalDeleteExternal = { vm.selectKeepInternalDeleteExternal() },
+                    onSelectKeepExternalDeleteInternal = { vm.selectKeepExternalDeleteInternal() },
                     onSelectAll = { vm.selectAllDuplicates() },
                     onDeselectAll = { vm.deselectAll() },
                     onSetPreview = { group, item -> vm.setPreview(group, item) },

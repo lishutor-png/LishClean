@@ -1,0 +1,6 @@
+{
+  "name": "LishClean",
+  "description": "Aplikasi pembersih file duplikat pintar dengan pemfilteran tipe file spesifik, perbandingan hash akurat, pratinjau aman, dan antarmuka modern yang cepat.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -27,10 +27,21 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
+      - name: Prepare Gradle Wrapper
+        run: |
+          # If gradlew does not exist in repository, generate it using installed Gradle CLI
+          if [ ! -f gradlew ]; then
+            echo "gradlew not found. Generating gradle wrapper using Gradle 9.3.1..."
+            gradle wrapper --gradle-version 9.3.1
+          fi
+
+          if [ -f gradlew ]; then
+            echo "Granting executable permissions to gradlew..."
+            chmod +x gradlew
+          fi
+
       - name: Prepare Keystores & Environment
         run: |
-          chmod +x gradlew
-
           # 1. Restore debug.keystore from base64 if needed
           if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
             echo "Decoding debug.keystore from debug.keystore.base64..."
@@ -60,11 +71,19 @@ jobs:
 
       - name: Run Unit Tests
         run: |
-          ./gradlew testDebugUnitTest --stacktrace --no-daemon
+          if [ -f ./gradlew ]; then
+            ./gradlew testDebugUnitTest --stacktrace --no-daemon
+          else
+            gradle testDebugUnitTest --stacktrace --no-daemon
+          fi
 
       - name: Build Debug APK
         run: |
-          ./gradlew assembleDebug --stacktrace --no-daemon
+          if [ -f ./gradlew ]; then
+            ./gradlew assembleDebug --stacktrace --no-daemon
+          else
+            gradle assembleDebug --stacktrace --no-daemon
+          fi
 
       - name: Verify APK Generated
         run: |

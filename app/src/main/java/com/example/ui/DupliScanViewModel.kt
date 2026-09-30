@@ -18,6 +18,7 @@ import com.example.scanner.DuplicateScannerEngine
 import com.example.scanner.SampleDataGenerator
 import com.example.scanner.ScanProgressEvent
 import com.example.scanner.StorageDetector
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -95,6 +96,12 @@ class DupliScanViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _compareFolderB = MutableStateFlow<String?>(null)
     val compareFolderB: StateFlow<String?> = _compareFolderB.asStateFlow()
+
+    private val _compareCategory = MutableStateFlow(FileCategory.ALL)
+    val compareCategory: StateFlow<FileCategory> = _compareCategory.asStateFlow()
+
+    private val _compareIncludeSubfolders = MutableStateFlow(true)
+    val compareIncludeSubfolders: StateFlow<Boolean> = _compareIncludeSubfolders.asStateFlow()
 
     private val _isComparing = MutableStateFlow(false)
     val isComparing: StateFlow<Boolean> = _isComparing.asStateFlow()
@@ -199,33 +206,83 @@ class DupliScanViewModel(application: Application) : AndroidViewModel(applicatio
         _compareFolderB.value = folderB
     }
 
+    fun swapCompareFolders() {
+        val temp = _compareFolderA.value
+        _compareFolderA.value = _compareFolderB.value
+        _compareFolderB.value = temp
+    }
+
+    fun setCompareCategory(category: FileCategory) {
+        _compareCategory.value = category
+    }
+
+    fun setCompareIncludeSubfolders(include: Boolean) {
+        _compareIncludeSubfolders.value = include
+    }
+
+    fun cancelFolderComparison() {
+        scanJob?.cancel()
+        _isComparing.value = false
+        _scanStatus.value = ScanStatus.Idle
+        _userMessage.value = "Perbandingan folder dibatalkan."
+    }
+
     fun startFolderComparison() {
-        val fA = _compareFolderA.value ?: return
-        val fB = _compareFolderB.value ?: return
+        val fA = _compareFolderA.value
+        val fB = _compareFolderB.value
+
+        if (fA == null || fB == null) {
+            _userMessage.value = "Silakan tentukan Folder A dan Folder B terlebih dahulu!"
+            return
+        }
+
+        if (fA == fB) {
+            _userMessage.value = "Folder A dan Folder B tidak boleh sama! Pilih dua folder yang berbeda."
+            return
+        }
 
         scanJob?.cancel()
         _isComparing.value = true
         _duplicateGroups.value = emptyList()
 
-        scanJob = viewModelScope.launch {
-            DuplicateScannerEngine.compareTwoFolders(
-                folderA = fA,
-                folderB = fB,
-                scanMode = _scanMode.value,
-                includeHiddenFiles = _includeHiddenFiles.value
-            ).collect { event ->
-                when (event) {
-                    is ScanProgressEvent.Status -> {
-                        _scanStatus.value = event.status
-                    }
-                    is ScanProgressEvent.Completed -> {
-                        _duplicateGroups.value = event.groups
-                        _lastStats.value = event.stats
-                        _scanStatus.value = ScanStatus.Completed(event.stats)
-                        _isComparing.value = false
-                        repository.saveScanHistory(event.stats, "Perbandingan Folder", "$fA vs $fB")
+        scanJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                DuplicateScannerEngine.compareTwoFolders(
+                    folderA = fA,
+                    folderB = fB,
+                    scanMode = _scanMode.value,
+                    includeHiddenFiles = _includeHiddenFiles.value,
+                    categoryFilter = _compareCategory.value,
+                    recursive = _compareIncludeSubfolders.value
+                ).collect { event ->
+                    when (event) {
+                        is ScanProgressEvent.Status -> {
+                            _scanStatus.value = event.status
+                        }
+                        is ScanProgressEvent.Completed -> {
+                            _duplicateGroups.value = event.groups
+                            _lastStats.value = event.stats
+                            _scanStatus.value = ScanStatus.Completed(event.stats)
+                            _isComparing.value = false
+                            repository.saveScanHistory(
+                                event.stats,
+                                "Banding: ${File(fA).name} vs ${File(fB).name}",
+                                "$fA vs $fB"
+                            )
+                        }
+                        is ScanProgressEvent.Error -> {
+                            _scanStatus.value = ScanStatus.Error(event.message)
+                            _userMessage.value = event.message
+                            _isComparing.value = false
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                _scanStatus.value = ScanStatus.Error(e.message ?: "Terjadi kesalahan saat membandingkan folder.")
+                _userMessage.value = "Gagal membandingkan: ${e.message}"
+                _isComparing.value = false
+            } finally {
+                _isComparing.value = false
             }
         }
     }
@@ -245,29 +302,38 @@ class DupliScanViewModel(application: Application) : AndroidViewModel(applicatio
 
         val externalRoots = _storageVolumes.value.filter { it.isRemovable }.map { it.path }
 
-        scanJob = viewModelScope.launch {
-            DuplicateScannerEngine.scanFolders(
-                targetFolders = targets,
-                scanMode = _scanMode.value,
-                includeHiddenFiles = _includeHiddenFiles.value,
-                categoryFilter = _selectedPreScanCategory.value,
-                externalStoragePaths = externalRoots
-            ).collect { event ->
-                when (event) {
-                    is ScanProgressEvent.Status -> {
-                        _scanStatus.value = event.status
-                    }
-                    is ScanProgressEvent.Completed -> {
-                        _duplicateGroups.value = event.groups
-                        _lastStats.value = event.stats
-                        _scanStatus.value = ScanStatus.Completed(event.stats)
-                        repository.saveScanHistory(
-                            event.stats,
-                            _scanMode.value.title,
-                            targets.joinToString(", ") { File(it).name.ifEmpty { it } }
-                        )
+        scanJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                DuplicateScannerEngine.scanFolders(
+                    targetFolders = targets,
+                    scanMode = _scanMode.value,
+                    includeHiddenFiles = _includeHiddenFiles.value,
+                    categoryFilter = _selectedPreScanCategory.value,
+                    externalStoragePaths = externalRoots
+                ).collect { event ->
+                    when (event) {
+                        is ScanProgressEvent.Status -> {
+                            _scanStatus.value = event.status
+                        }
+                        is ScanProgressEvent.Completed -> {
+                            _duplicateGroups.value = event.groups
+                            _lastStats.value = event.stats
+                            _scanStatus.value = ScanStatus.Completed(event.stats)
+                            repository.saveScanHistory(
+                                event.stats,
+                                _scanMode.value.title,
+                                targets.joinToString(", ") { File(it).name.ifEmpty { it } }
+                            )
+                        }
+                        is ScanProgressEvent.Error -> {
+                            _scanStatus.value = ScanStatus.Error(event.message)
+                            _userMessage.value = "Pemindaian terhenti: ${event.message}"
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                _scanStatus.value = ScanStatus.Error(e.message ?: "Terjadi kesalahan sistem saat memindai.")
+                _userMessage.value = "Pemindaian terhenti: ${e.message}"
             }
         }
     }

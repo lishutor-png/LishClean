@@ -377,4 +377,58 @@ object StorageDetector {
 
         return list
     }
+
+    data class FolderQuickInfo(
+        val totalFiles: Int,
+        val totalSize: Long,
+        val subfolderCount: Int
+    )
+
+    fun getFolderQuickInfo(folder: File): FolderQuickInfo {
+        var files = 0
+        var size = 0L
+        var subdirs = 0
+        try {
+            val list = folder.listFiles() ?: return FolderQuickInfo(0, 0L, 0)
+            for (f in list) {
+                if (f.isDirectory) {
+                    subdirs++
+                } else if (f.isFile) {
+                    files++
+                    size += f.length()
+                }
+            }
+        } catch (_: Exception) {
+        }
+        return FolderQuickInfo(files, size, subdirs)
+    }
+
+    /**
+     * Resolves an Android SAF content URI (from OpenDocumentTree) to a real filesystem path if possible.
+     */
+    fun uriToPath(context: Context, uri: android.net.Uri): String? {
+        return try {
+            val docId = android.provider.DocumentsContract.getTreeDocumentId(uri) ?: return null
+            val split = docId.split(":")
+            if (split.isEmpty()) return null
+            val type = split[0]
+            val subPath = if (split.size > 1) split[1] else ""
+            if ("primary".equals(type, ignoreCase = true)) {
+                val base = Environment.getExternalStorageDirectory().absolutePath
+                if (subPath.isEmpty()) base else "$base/$subPath"
+            } else {
+                val extDirs = ContextCompat.getExternalFilesDirs(context, null)
+                val extMatch = extDirs.mapNotNull { it?.absolutePath }.firstOrNull { it.contains(type) }
+                if (extMatch != null) {
+                    val root = extMatch.substringBefore("/Android")
+                    if (subPath.isEmpty()) root else "$root/$subPath"
+                } else {
+                    val candidate = File("/storage/$type/$subPath")
+                    if (candidate.exists()) candidate.absolutePath else "/storage/$type"
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
 }

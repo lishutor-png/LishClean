@@ -109,6 +109,8 @@ fun LishCleanApp(vm: DupliScanViewModel = viewModel()) {
     val previewItem by vm.previewItem.collectAsStateWithLifecycle()
     val compareFolderA by vm.compareFolderA.collectAsStateWithLifecycle()
     val compareFolderB by vm.compareFolderB.collectAsStateWithLifecycle()
+    val compareCategory by vm.compareCategory.collectAsStateWithLifecycle()
+    val compareIncludeSubfolders by vm.compareIncludeSubfolders.collectAsStateWithLifecycle()
     val isComparing by vm.isComparing.collectAsStateWithLifecycle()
     val scanHistory by vm.scanHistory.collectAsStateWithLifecycle()
     val userMessage by vm.userMessage.collectAsStateWithLifecycle()
@@ -375,11 +377,18 @@ fun LishCleanApp(vm: DupliScanViewModel = viewModel()) {
                 2 -> CompareFoldersScreen(
                     folderA = compareFolderA,
                     folderB = compareFolderB,
+                    storageVolumes = storageVolumes,
                     isComparing = isComparing,
                     scanStatus = scanStatus,
                     duplicateGroups = duplicateGroups,
+                    compareCategory = compareCategory,
+                    compareIncludeSubfolders = compareIncludeSubfolders,
                     onSelectFolders = { a, b -> vm.setCompareFolders(a, b) },
+                    onSwapFolders = { vm.swapCompareFolders() },
+                    onSetCompareCategory = { vm.setCompareCategory(it) },
+                    onSetCompareIncludeSubfolders = { vm.setCompareIncludeSubfolders(it) },
                     onStartCompare = { vm.startFolderComparison() },
+                    onCancelCompare = { vm.cancelFolderComparison() },
                     onPreview = { group, item -> vm.setPreview(group, item) },
                     onNavigateToResults = { currentNavIndex = 1 }
                 )

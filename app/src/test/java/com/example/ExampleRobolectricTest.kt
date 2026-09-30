@@ -145,4 +145,35 @@ class ExampleRobolectricTest {
         assertEquals(1, deletionResult.successCount)
         assertFalse("Duplicate file should have been deleted directly", duplicateFile.exists())
     }
+
+    @Test
+    fun compareSpecificFolders_findsMatchesAcrossCustomFolders() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val baseDir = File(context.filesDir, "test_custom_compare")
+        baseDir.mkdirs()
+
+        val folderA = File(baseDir, "FolderKhususA").apply { mkdirs() }
+        val folderB = File(baseDir, "FolderKhususB").apply { mkdirs() }
+
+        val fileA = File(folderA, "data_keuangan.xlsx")
+        val fileB = File(folderB, "data_keuangan_backup.xlsx")
+        val content = "Identical spreadsheet data for compare specific folder test"
+        fileA.writeText(content)
+        fileB.writeText(content)
+
+        val completedEvent = DuplicateScannerEngine.compareTwoFolders(
+            folderA = folderA.absolutePath,
+            folderB = folderB.absolutePath,
+            scanMode = ScanMode.HASH_SHA256,
+            includeHiddenFiles = true,
+            categoryFilter = FileCategory.ALL,
+            recursive = true
+        ).last()
+
+        assertTrue(completedEvent is ScanProgressEvent.Completed)
+        val completed = completedEvent as ScanProgressEvent.Completed
+        assertEquals(1, completed.groups.size)
+        assertEquals(fileA.name, completed.groups.first().items.first().name)
+        assertTrue(completed.groups.first().items.any { it.path == fileB.absolutePath })
+    }
 }
